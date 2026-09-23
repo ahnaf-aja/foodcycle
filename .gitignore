@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# tool-generated files (Vercel CLI / coding agents) — not part of the project
+.agents
+.claude
+skills-lock.json
+
