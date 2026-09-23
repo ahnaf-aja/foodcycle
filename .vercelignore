@@ -1,0 +1,27 @@
+# Files the Vercel CLI must not upload.
+#
+# `.vercelignore` matters here because a CLI deploy uploads everything that is
+# not listed, regardless of `.gitignore`. The local `.env` holds development
+# values — notably `AUTH_URL=http://localhost:3000` — and real secrets.
+#
+# Leaving it in the upload breaks production in a subtle way: Next.js loads a
+# bundled `.env` at runtime, and Auth.js reads `AUTH_URL` from it. Because
+# `AUTH_URL` is deliberately NOT set in the Vercel project (production should
+# derive its own URL from the request host), the uploaded development value is
+# the only one present and it wins — so every sign-in on the live site redirects
+# to the developer's laptop. Production values come from Vercel's project env
+# settings instead; the local file is for local development only.
+
+.env
+.env.*
+!.env.example
+
+# Tool-generated directories (Vercel CLI / coding agents), not part of the app.
+.agents
+.claude
+skills-lock.json
+
+# Local verification scratch files.
+verify-*.ts
+verify-*.mjs
+*.bundle.mjs
