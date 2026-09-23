@@ -1,0 +1,484 @@
+// FoodCycle — database schema
+//
+// Conventions:
+//  * Money is an Int of Indonesian Rupiah (IDR has no practical subunit), so
+//    there is no floating-point rounding risk and no Decimal serialisation
+//    friction when passing values to Client Components.
+//  * The database is the single source of truth. Stock, order status and impact
+//    are always read from here — never mirrored into client state that can drift.
+//  * Grade and Quality are internal marketplace indicators, not health
+//    certifications. The restaurant remains responsible for food safety.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+enum UserRole {
+  CUSTOMER
+  RESTAURANT
+  SOCIAL_INSTITUTION
+  ADMIN
+}
+
+/// Internal marketplace freshness indicator. Not a health certification.
+enum Grade {
+  GRADE_A // Excellent condition, comfortable consumption window
+  GRADE_B // Good condition, better consumed sooner
+  GRADE_C // Consume soon — approaching the recommended deadline
+}
+
+enum FoodStatus {
+  AVAILABLE
+  SOLD_OUT
+  EXPIRED
+  UNAVAILABLE
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  ON_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+/// What the customer intends to do with the food they bought.
+enum OrderPurpose {
+  SELF
+  DONATION
+}
+
+enum FulfillmentType {
+  PICKUP
+  DELIVERY
+}
+
+/// Mirrors the order lifecycle but is confirmed by the institution on receipt.
+enum DonationStatus {
+  CREATED
+  CONFIRMED
+  PREPARING
+  READY
+  DELIVERING
+  DELIVERED
+  CANCELLED
+}
+
+enum InstitutionType {
+  ORPHANAGE
+  NURSING_HOME
+  FOOD_BANK
+  SHELTER
+  COMMUNITY_KITCHEN
+}
+
+enum NotificationType {
+  ORDER_PLACED
+  ORDER_CONFIRMED
+  ORDER_PREPARING
+  ORDER_READY
+  ORDER_ON_DELIVERY
+  ORDER_COMPLETED
+  ORDER_CANCELLED
+  DONATION_CREATED
+  DONATION_ON_DELIVERY
+  DONATION_DELIVERED
+  DONATION_RECEIVED
+  LOW_STOCK
+  SYSTEM
+}
+
+// ===========================================================================
+// Identity & auth
+// ===========================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  phone         String?
+  role          UserRole  @default(CUSTOMER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  restaurant        Restaurant?
+  institution       SocialInstitution?
+  cart              Cart?
+  orders            Order[]
+  donations         Donation[]        @relation("DonationDonor")
+  reviews           Review[]
+  notifications     Notification[]
+  impactRecords     ImpactRecord[]
+  preferences       UserPreference[]
+  savedRestaurants  SavedRestaurant[]
+
+  @@index([role])
+}
+
+/// Auth.js adapter table.
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@index([userId])
+}
+
+/// Auth.js adapter table.
+model Session {
+  sessionToken String   @id
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Auth.js adapter table.
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ===========================================================================
+// Restaurants & institutions
+// ===========================================================================
+
+model Restaurant {
+  id          String   @id @default(cuid())
+  ownerId     String   @unique
+  name        String
+  slug        String   @unique
+  description String?
+  cuisine     String?
+  image       String?
+  address     String
+  city        String
+  /// Used for "near you" recommendation weighting when the customer shares a location.
+  latitude    Float?
+  longitude   Float?
+  phone       String?
+  isOpen      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner        User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  foodItems    FoodItem[]
+  orders       Order[]
+  reviews      Review[]
+  donations    Donation[]
+  savedBy      SavedRestaurant[]
+
+  @@index([city])
+}
+
+model SocialInstitution {
+  id          String          @id @default(cuid())
+  ownerId     String          @unique
+  name        String
+  slug        String          @unique
+  description String?
+  type        InstitutionType
+  image       String?
+  address     String
+  city        String
+  phone       String?
+  /// How many people the institution currently supports, shown when choosing
+  /// where a donation goes. Optional — never used to pressure the customer.
+  supportedCount Int?
+  /// What they currently need most, e.g. "Meals", "Rice", "Bread".
+  needs       String[]
+  verified    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  owner     User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  donations Donation[]
+
+  @@index([city])
+}
+
+// ===========================================================================
+// Marketplace
+// ===========================================================================
+
+model FoodItem {
+  id             String     @id @default(cuid())
+  restaurantId   String
+  name           String
+  description    String?
+  category       String
+  image          String?
+  originalPrice  Int
+  discountPrice  Int
+  stock          Int
+  grade          Grade
+  /// 0–100. Derived from listing freshness, remaining consumption window,
+  /// storage condition, and the restaurant's own assessment.
+  qualityScore   Int
+  expirationTime DateTime
+  pickupDeadline DateTime
+  status         FoodStatus @default(AVAILABLE)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  restaurant Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  reviews    Review[]
+
+  @@index([restaurantId])
+  @@index([status])
+  @@index([category])
+  @@index([pickupDeadline])
+}
+
+// ===========================================================================
+// Cart — one active cart per customer
+// ===========================================================================
+
+model Cart {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+}
+
+model CartItem {
+  id         String   @id @default(cuid())
+  cartId     String
+  foodItemId String
+  quantity   Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  cart     Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  foodItem FoodItem @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+
+  /// A food item appears at most once per cart; quantity is incremented instead.
+  @@unique([cartId, foodItemId])
+  @@index([cartId])
+}
+
+// ===========================================================================
+// Orders
+// ===========================================================================
+
+model Order {
+  id           String          @id @default(cuid())
+  orderNumber  String          @unique
+  customerId   String
+  restaurantId String
+  status       OrderStatus     @default(PENDING)
+  purpose      OrderPurpose
+  fulfillment  FulfillmentType @default(PICKUP)
+
+  subtotal      Int
+  savings       Int
+  deliveryFee   Int @default(0)
+  total         Int
+
+  /// Required when fulfillment is DELIVERY.
+  deliveryAddress String?
+  notes           String?
+
+  /// Timeline stamps, so the customer's progress view and the restaurant's
+  /// queue read from the same record rather than guessing from status alone.
+  confirmedAt  DateTime?
+  preparingAt  DateTime?
+  readyAt      DateTime?
+  onDeliveryAt DateTime?
+  completedAt  DateTime?
+  cancelledAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer   User        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurant Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  items      OrderItem[]
+  donation   Donation?
+  reviews    Review[]
+
+  @@index([customerId])
+  @@index([restaurantId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// Price and grade are frozen at purchase time so later edits to a listing
+/// never rewrite a customer's order history.
+model OrderItem {
+  id         String @id @default(cuid())
+  orderId    String
+  foodItemId String
+  name       String
+  quantity   Int
+  unitPrice  Int
+  unitOriginalPrice Int
+  grade      Grade
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  foodItem FoodItem @relation(fields: [foodItemId], references: [id])
+
+  @@index([orderId])
+  @@index([foodItemId])
+}
+
+// ===========================================================================
+// Donations
+// ===========================================================================
+
+model Donation {
+  id            String         @id @default(cuid())
+  orderId       String         @unique
+  donorId       String
+  restaurantId  String
+  institutionId String
+  status        DonationStatus @default(CREATED)
+  /// Total meals handed over — the unit used for impact reporting.
+  meals         Int
+  /// Estimated food weight diverted from waste, in kilograms.
+  weightKg      Float
+  notes         String?
+
+  /// Set when the institution confirms it physically received the food.
+  receivedAt    DateTime?
+  receivedBy    String?
+  deliveredAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order       Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  donor       User              @relation("DonationDonor", fields: [donorId], references: [id], onDelete: Cascade)
+  restaurant  Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  institution SocialInstitution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([donorId])
+  @@index([institutionId])
+  @@index([restaurantId])
+  @@index([status])
+}
+
+// ===========================================================================
+// Reviews, notifications, impact, preferences
+// ===========================================================================
+
+model Review {
+  id           String   @id @default(cuid())
+  userId       String
+  foodItemId   String?
+  restaurantId String
+  orderId      String?
+  rating       Int
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodItem   FoodItem?   @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+  restaurant Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  order      Order?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  /// One review per order, so ratings cannot be inflated by repeat submissions.
+  @@unique([userId, orderId])
+  @@index([restaurantId])
+  @@index([foodItemId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  /// In-app destination, e.g. "/orders/abc123".
+  link      String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+}
+
+/// One row per completed order, feeding both the personal and community impact
+/// views. Kept append-only so totals are a sum, never a mutable counter.
+model ImpactRecord {
+  id           String   @id @default(cuid())
+  userId       String?
+  orderId      String?  @unique
+  mealsSaved   Int      @default(0)
+  mealsDonated Int      @default(0)
+  weightKg     Float    @default(0)
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+/// Per-category affinity, updated as a customer orders. Drives the
+/// "Recommended because you often order bakery items" explanation.
+model UserPreference {
+  id       String   @id @default(cuid())
+  userId   String
+  category String
+  /// Unbounded weight, normalised at query time. Higher means stronger affinity.
+  score    Float    @default(0)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category])
+  @@index([userId])
+}
+
+model SavedRestaurant {
+  id           String   @id @default(cuid())
+  userId       String
+  restaurantId String
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, restaurantId])
+  @@index([userId])
+}

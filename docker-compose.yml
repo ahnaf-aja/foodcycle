@@ -1,0 +1,25 @@
+# Local PostgreSQL for FoodCycle.
+#   docker compose up -d      # start
+#   docker compose down       # stop (keeps data)
+#   docker compose down -v    # stop and wipe data
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: foodcycle-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: foodcycle
+      POSTGRES_PASSWORD: foodcycle
+      POSTGRES_DB: foodcycle
+    ports:
+      - "5432:5432"
+    volumes:
+      - foodcycle-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foodcycle -d foodcycle"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  foodcycle-pgdata:

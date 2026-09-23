@@ -1,26 +1,250 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ==========================================================================
+   FoodCycle design tokens
+   --------------------------------------------------------------------------
+   A deliberately small, semantic palette. Colour is used to communicate
+   meaning (availability, urgency), never for decoration. Warm off-white
+   canvas, white surfaces, near-black ink, one deep natural green accent.
+   ========================================================================== */
+
+@theme {
+  /* Surfaces */
+  --color-canvas: #faf9f6; /* warm off-white — page background */
+  --color-surface: #ffffff; /* cards, sheets, bars */
+  --color-surface-sunken: #f4f2ed; /* inset areas, image placeholders */
+  --color-line: #e8e5df; /* hairline borders and dividers */
+  --color-line-strong: #d6d2c9;
+
+  /* Text */
+  --color-ink: #17181a; /* near-black — headings and body */
+  --color-ink-soft: #4b4f55; /* secondary body text */
+  --color-ink-muted: #767b82; /* metadata, captions, placeholders */
+
+  /* Brand — deep natural green */
+  --color-brand: #14532d;
+  --color-brand-strong: #0e3d21;
+  --color-brand-soft: #eaf2ec; /* tinted background for brand accents */
+  --color-brand-ink: #14532d; /* brand-coloured text on light ground */
+
+  /* Semantic state — the only other colours in the system.
+     Each value is dark enough to serve as text on its own tinted background
+     (WCAG AA at small sizes) *and* as a solid fill behind white text, so one
+     token covers both uses and the palette stays small. */
+  --color-available: #146c34; /* in stock, good to go */
+  --color-available-soft: #e8f5ed;
+  --color-soon: #92400e; /* ending soon, low stock */
+  --color-soon-soft: #fdf3e7;
+  --color-urgent: #b42318; /* sold out, urgent, destructive */
+  --color-urgent-soft: #fdecea;
+  --color-unavailable: #62666c; /* expired / unavailable */
+  --color-unavailable-soft: #f1f0ed;
+
+  /* Radii — subtle, not pill-shaped */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Typography */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Motion — short and purposeful only */
+  --ease-out-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+* {
+  border-color: var(--color-line);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tabular figures wherever numbers are compared vertically (prices, stock). */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   Focus — visible, consistent, keyboard-first
+   ========================================================================== */
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* ==========================================================================
+   Accessibility helpers
+   ========================================================================== */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip link — revealed on keyboard focus only. */
+.skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -3rem;
+  z-index: 100;
+  transition: top 150ms var(--ease-out-soft);
+}
+.skip-link:focus {
+  top: 0.75rem;
+}
+
+/* ==========================================================================
+   Motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Loading placeholder shimmer, used by skeleton components. */
+@keyframes fc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.skeleton {
+  background-color: var(--color-surface-sunken);
+  animation: fc-pulse 1.6s var(--ease-out-soft) infinite;
+}
+
+/* ==========================================================================
+   Motion — scroll reveals and image load-in
+
+   Content fades and rises into place as it enters the viewport. Two rules keep
+   this honest rather than decorative:
+
+     1. The effect is *progressive enhancement*. `[data-reveal]` starts visible,
+        and only a client component that has actually mounted adds
+        `data-reveal="pending"` to hide it. With JavaScript off, or before
+        hydration, nothing is ever hidden — so a failed script can never leave
+        the page blank.
+
+     2. `prefers-reduced-motion` cancels it, and the global reduce block above
+        also floors every duration at 0.01ms.
+   ========================================================================== */
+
+@keyframes fc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+  The hidden state only applies under `html.js`, which the inline script in the
+  root layout sets before first paint. Without JavaScript the selector never
+  matches and content is visible from the start — the animation can never blank
+  out a page whose scripts failed to load.
+*/
+.js [data-reveal="pending"] {
+  opacity: 0;
+  /* Distance is a custom property so it can be tuned per use. */
+  transform: translateY(var(--reveal-shift, 12px));
+  will-change: opacity, transform;
+}
+
+.js [data-reveal="shown"] {
+  animation: fc-rise 520ms var(--ease-out-soft) both;
+}
+
+/* A grid of cards staggering in reads as one movement rather than N separate
+   jumps. The delay is set inline by the Reveal component. */
+.js [data-reveal="shown"][data-reveal-delay] {
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+/* Images fade in once decoded, so a slow photo never flashes as a grey box. */
+@keyframes fc-image-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Scoped to `.js` for the same reason as the reveals above: with JavaScript
+   off, nothing hides the photo and it is simply visible. */
+.js [data-image-state="loading"] {
+  opacity: 0;
+}
+
+.js [data-image-state="loaded"] {
+  animation: fc-image-in 420ms var(--ease-out-soft) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js [data-reveal="pending"] {
+    opacity: 1;
+    transform: none;
+  }
+  .js [data-reveal="shown"] {
+    animation: none;
+  }
+  [data-image-state="loading"] {
+    opacity: 1;
+  }
+  [data-image-state="loaded"] {
+    animation: none;
+  }
+}
+
+/* Horizontal scrollers (category chips, filter rows) hide their scrollbar. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

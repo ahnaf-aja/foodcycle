@@ -1,36 +1,208 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FoodCycle 🍽️♻️❤️
 
-## Getting Started
+Platform jual-beli **makanan surplus** sekaligus **donasi makanan** untuk panti sosial.
 
-First, run the development server:
+Restoran menjual makanan yang tidak habis terjual dengan harga ±50%, pembeli bisa
+menikmatinya sendiri atau mendonasikannya ke panti asuhan / panti jompo. Setiap
+donasi tercatat sebagai dampak yang bisa dilihat.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## Alur utama
+
+```
+Restoran  ──►  memasukkan makanan yang tidak habis terjual
+          ──►  dijual dengan harga ±50% (Grade A/B/C + Quality Score)
+Pengguna  ──►  membeli makanan tersebut
+          ──►  pilih: "Donasikan"  atau  buat dirinya sendiri
+Donasi    ──►  disalurkan ke panti asuhan / panti jompo
+Sistem    ──►  mencatat dampak donasi (porsi, berat, riwayat)  ♻️❤️
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Fitur
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Grade — indikator kondisi makanan
 
-## Learn More
+Setiap makanan surplus diberi grade oleh restoran, supaya pembeli tahu kondisi
+sebenarnya sebelum membeli — bukan sekadar "murah karena mau basi".
 
-To learn more about Next.js, take a look at the following resources:
+| Grade | Arti | Kapan dipakai |
+|---|---|---|
+| **A** | Excellent condition | Jendela konsumsi masih lega, kualitas visual sangat baik |
+| **B** | Good condition | Masih layak, tapi sebaiknya segera dimakan |
+| **C** | Consume soon | Masih dianggap layak restoran, tapi mendekati akhir jendela konsumsi |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+> FoodCycle Grade adalah indikator internal marketplace, **bukan** sertifikasi
+> keamanan pangan resmi. Restoran tetap bertanggung jawab atas kelayakan makanan.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Quality Score — skor 0–100
 
-## Deploy on Vercel
+Skor perkiraan kondisi makanan saat ini, dihitung dari kesegaran listing, sisa
+jendela konsumsi, kondisi penyimpanan, dan informasi dari restoran.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Skor | Label |
+|---|---|
+| ≥ 90 | Excellent |
+| ≥ 80 | Very good |
+| ≥ 70 | Good |
+| ≥ 60 | Fair |
+| < 60 | Consume soon |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Bisa difilter: `?minQuality=90` hanya menampilkan skor ≥ 90.
+
+### Recommendation filtering
+
+Halaman depan dan `/foods?sort=recommended` memakai mesin rekomendasi yang
+menyesuaikan diri dengan riwayat belanja pengguna:
+
+- **Pengguna anonim** melihat rak umum ("Popular right now", "Ending soon").
+- **Pengguna login** melihat rak personal ("Recommended for you") berdasarkan
+  kategori yang sering dibeli, preferensi tersimpan, dan restoran yang di-follow.
+- Setiap kartu rekomendasi menampilkan **alasan** kenapa ia muncul
+  ("Anda sering memesan Rice & Bowls", "Rating tinggi", "Diskon 50%", dst.)
+- Urutan `recommended` **berbeda** dari urutan `price-asc` — ranking benar-benar
+  diterapkan, bukan sekadar label.
+
+### Filter & sort marketplace
+
+Filter: kategori, grade, restoran, diskon minimum, kualitas minimum, jendela
+penjemputan, harga.
+Sort: `recommended`, `newest`, `price-asc`, `discount`, `quality`, `ending-soon`.
+
+### Donasi & dampak
+
+- Saat checkout, pembeli memilih **untuk diri sendiri** atau **donasikan**.
+- Donasi masuk ke panti sosial (panti asuhan / panti jompo) dan tercatat
+  sebagai `Donation` + `ImpactRecord`.
+- Halaman `/impact` menampilkan akumulasi dampak: porsi terselamatkan, berat
+  makanan, donasi tersalurkan.
+
+---
+
+## Peran pengguna
+
+| Peran | Area | Isi |
+|---|---|---|
+| **Customer** | `/`, `/foods`, `/donate`, `/impact` | Belanja, checkout, donasi, riwayat order |
+| **Restaurant** | `/restaurant/*` | Kelola listing, inventori, order masuk, ulasan |
+| **Institution** | `/institution/*` | Donasi masuk, profil panti, onboarding |
+| **Admin** | `/admin/*` | Kelola pengguna, restoran, institusi |
+
+Total **37 halaman**, **17 model** database.
+
+---
+
+## Teknologi
+
+| Bagian | Dipakai |
+|---|---|
+| Framework | Next.js 16 (App Router, Turbopack) |
+| Bahasa | TypeScript (strict) |
+| UI | React 19, Tailwind CSS v4 |
+| Database | PostgreSQL 16 |
+| ORM | Prisma 6 |
+| Auth | NextAuth (Auth.js) v5 — credentials, bcryptjs |
+| Validasi | Zod |
+| Ikon | Lucide React |
+
+---
+
+## Menjalankan di lokal
+
+**Prasyarat:** Node.js 20+, Docker Desktop.
+
+### Cara cepat (VS Code)
+
+1. Buka folder `foodcycle-app` di VS Code
+2. Tekan **`Ctrl + Shift + B`** → task *"1. Jalanin website (dev server)"*
+3. Buka http://localhost:3000
+
+### Cara manual
+
+```bash
+docker compose up -d      # 1. nyalakan PostgreSQL
+npm install               # 2. pasang dependensi
+npx prisma generate       # 3. generate Prisma Client
+npx prisma migrate deploy # 4. buat tabel
+npm run db:seed           # 5. isi data contoh
+npm run dev               # 6. jalankan
+```
+
+Atau sekali jalan: `sh setup.sh`
+
+### Akun demo
+
+Password semua akun: **`demo123`**
+
+| Email | Peran |
+|---|---|
+| `customer@foodcycle.demo` | Pembeli — punya riwayat order & donasi |
+| `restaurant@foodcycle.demo` | Restoran — punya antrean pesanan |
+| `institution@foodcycle.demo` | Panti asuhan — punya donasi masuk |
+| `admin@foodcycle.demo` | Admin platform |
+
+### Perintah lain
+
+```bash
+npm run typecheck   # cek error TypeScript
+npm run db:studio   # GUI lihat isi database
+npm run build       # build produksi
+```
+
+---
+
+## Catatan tentang data demo
+
+Listing hasil seed memakai **deadline relatif** ("pickup dalam 2 jam"), lalu
+semuanya digeser ke depan **45 hari** oleh `DEMO_HORIZON_DAYS` di `prisma/seed.ts`.
+Ini supaya demo tidak "membusuk" sendiri: tanpa itu, `expireStaleListings()`
+akan menandai semua listing sebagai EXPIRED beberapa jam setelah seeding, dan
+marketplace jadi kosong.
+
+Kalau data demo tetap perlu disegarkan:
+
+```bash
+npm run db:seed
+```
+
+---
+
+## Struktur proyek
+
+```
+foodcycle-app/
+├── prisma/
+│   ├── schema.prisma        # 17 model
+│   ├── seed.ts              # data demo realistis (Rupiah, menu Indonesia)
+│   └── migrations/
+├── public/images/
+│   ├── food/                # 27 foto makanan (lokal, bukan hotlink)
+│   └── venue/               # 7 foto restoran & panti
+├── src/
+│   ├── app/
+│   │   ├── (site)/          # area customer
+│   │   ├── (auth)/          # login & signup
+│   │   ├── restaurant/      # dashboard restoran
+│   │   ├── institution/     # dashboard panti
+│   │   └── admin/           # dashboard admin
+│   ├── components/          # food/, marketplace/, layout/, ui/, auth/
+│   ├── lib/                 # domain.ts (Grade/Quality), recommendation.ts, filters.ts
+│   └── server/              # query & server actions
+└── docker-compose.yml       # PostgreSQL 16 lokal
+```
+
+---
+
+## Deployment
+
+`docker-compose.yml`, `.env.example`, dan `prisma/migrations/` sudah disertakan
+supaya bisa di-deploy ke Vercel / Railway / Fly.io (butuh PostgreSQL terkelola).
+
+Variabel lingkungan yang wajib diisi: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_URL`,
+`AUTH_TRUST_HOST`. Lihat `.env.example`.
+
+> ⚠️ `AUTH_SECRET` di `.env` hanya untuk pengembangan lokal. Generate nilai baru
+> untuk produksi:
+> `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
