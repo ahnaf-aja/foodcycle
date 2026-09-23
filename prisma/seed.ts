@@ -39,11 +39,16 @@ const DEMO_PASSWORD = "demo123";
  *
  * So every future deadline is pushed out by `DEMO_HORIZON_DAYS`. The spacing
  * between listings is left untouched (1h still ends before 8h) — only the whole
- * window moves, which keeps a seeded demo presentable for weeks. Deadlines that
- * are deliberately in the past (the EXPIRED sample listing) keep their offset,
- * so that case is still demonstrated.
+ * window moves, which keeps a seeded demo presentable indefinitely. Deadlines
+ * that are deliberately in the past (the EXPIRED sample listing) keep their
+ * offset, so that case is still demonstrated.
+ *
+ * The horizon is deliberately huge (10 years) rather than "a few weeks": the
+ * demo has to survive being presented months after it was seeded, and a demo
+ * that silently empties itself in front of an audience is the exact failure
+ * this guards against.
  */
-const DEMO_HORIZON_DAYS = 45;
+const DEMO_HORIZON_DAYS = 3650;
 const DEMO_HORIZON_HOURS = DEMO_HORIZON_DAYS * 24;
 
 const hoursFromNow = (h: number) =>
