@@ -16,9 +16,8 @@
 .env.*
 !.env.example
 
-# Tool-generated directories (Vercel CLI / coding agents), not part of the app.
+# Tool-generated scratch files, not part of the app.
 .agents
-.claude
 skills-lock.json
 
 # Local verification scratch files.
